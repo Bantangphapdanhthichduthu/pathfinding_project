@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pathfinding Map</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f0f0;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        #map {
+            flex: 1;
+            background: #ddd;
+            position: relative;
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: white;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .sidebar-header {
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .sidebar-content {
+            padding: 20px;
+            flex: 1;
+        }
+        
+        .control-section {
+            margin-bottom: 20px;
+        }
+        
+        .control-section h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        .point-display {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 10px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .point-display strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #d0d0d0;
+        }
+        
+        .result-box {
+            background: #e8f5e9;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+            border: 1px solid #4caf50;
+            display: none;
+        }
+        
+        .result-box.show {
+            display: block;
+        }
+        
+        .result-box h4 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .result-box p {
+            font-size: 12px;
+            color: #333;
+            margin: 5px 0;
+        }
+        
+        .path-list {
+            max-height: 150px;
+            overflow-y: auto;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+        
+        .path-item {
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .status-message {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 12px;
+            display: none;
+        }
+        
+        .status-message.show {
+            display: block;
+        }
+        
+        .status-message.info {
+            background: #e3f2fd;
+            color: #1565c0;
+            border-left: 3px solid #1565c0;
+        }
+        
+        .status-message.error {
+            background: #ffebee;
+            color: #c62828;
+            border-left: 3px solid #c62828;
+        }
+        
+        .status-message.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-left: 3px solid #4caf50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="map"></div>
+        <div class="sidebar">
+            <div class="sidebar-header">⚙️ Pathfinding</div>
+            <div class="sidebar-content">
+                <div class="control-section">
+                    <h3>Hướng dẫn</h3>
+                    <p style="font-size: 12px; color: #666; line-height: 1.6;">
+                        1. Click trên bản đồ để chọn điểm bắt đầu (điểm xanh)<br>
+                        2. Click lần nữa để chọn điểm kết thúc (điểm đỏ)<br>
+                        3. Nhấn "Tìm đường" để tìm đường đi ngắn nhất
+                    </p>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Điểm bắt đầu</h3>
+                    <div id="startPoint" class="point-display">
+                        Chưa chọn
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h3>Điểm kết thúc</h3>
+                    <div id="endPoint" class="point-display">
+                        Chưa chọn
+                    </div>
+                </div>
+                
+                <button class="btn-primary" id="findPathBtn" disabled>
+                    🔍 Tìm đường
+                </button>
+                
+                <button class="btn-secondary" id="resetBtn">
+                    🔄 Làm lại
+                </button>
+                
+                <div id="statusMsg" class="status-message"></div>
+                
+                <div id="resultBox" class="result-box">
+                    <h4>✅ Kết quả</h4>
+                    <p><strong>Đường đi:</strong></p>
+                    <div id="pathList" class="path-list"></div>
+                    <p id="distanceText" style="margin-top: 10px;"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/pathfinding';
+        
+        let map;
+        let imageOverlay;
+        let markers = { start: null, end: null };
+        let selectedPath = null;
+        let startCoord = null;
+        let endCoord = null;
+        
+        // Cấu hình Leaflet cho pixel coordinates
+        const imageWidth = 8500;
+        const imageHeight = 7801;
+        
+        function initMap() {
+            // dùng CRS Simple có sẵn để làm việc với pixel coordinates
+            map = L.map('map', {
+                crs: L.CRS.Simple,
+                maxZoom: 10,
+                minZoom: -2,
+                zoom: 0,
+                center: [imageHeight / 2, imageWidth / 2]
+            });
+            
+            // Load ảnh bản đồ
+            const imageBounds = [[0, 0], [imageHeight, imageWidth]];
+            imageOverlay = L.imageOverlay('/static/map.png', imageBounds).addTo(map);
+            
+            map.fitBounds(imageBounds);
+            
+            // Sự kiện click trên bản đồ
+            map.on('click', onMapClick);
+            
+            // Load nodes và edges từ API
+            //loadNodesAndEdges();
+        }
+        
+        function onMapClick(e) {
+            const lat = e.latlng.lat; // y
+            const lng = e.latlng.lng; // x
+            
+            if (!startCoord) {
+                startCoord = { x: lng, y: lat };
+                addMarker('start', startCoord);
+                showStatus(`Điểm bắt đầu: (${Math.round(lng)}, ${Math.round(lat)})`, 'info');
+            } else if (!endCoord) {
+                endCoord = { x: lng, y: lat };
+                addMarker('end', endCoord);
+                showStatus(`Điểm kết thúc: (${Math.round(lng)}, ${Math.round(lat)})`, 'info');
+                document.getElementById('findPathBtn').disabled = false;
+            }
+            
+            updatePointDisplay();
+        }
+        
+        function addMarker(type, coord) {
+            const icon = L.icon({
+                iconUrl: getMarkerIcon(type),
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+            
+            const marker = L.marker([coord.y, coord.x], { icon }).addTo(map);
+            
+            if (markers[type]) {
+                map.removeLayer(markers[type]);
+            }
+            markers[type] = marker;
+        }
+        
+        function getMarkerIcon(type) {
+            if (type === 'start') {
+                // SVG cho điểm bắt đầu (xanh)
+                return 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI4IiBmaWxsPSIjNDJhNWY1IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiLz48L3N2Zz4=';
+            } else {
+                // SVG cho điểm kết thúc (đỏ)
+                return 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI4IiBmaWxsPSIjZWYyNTJiIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiLz48L3N2Zz4=';
+            }
+        }
+        
+        function updatePointDisplay() {
+            const startEl = document.getElementById('startPoint');
+            const endEl = document.getElementById('endPoint');
+            
+            if (startCoord) {
+                startEl.innerHTML = `<strong>🟢 Bắt đầu</strong>X: ${Math.round(startCoord.x)}, Y: ${Math.round(startCoord.y)}`;
+            }
+            
+            if (endCoord) {
+                endEl.innerHTML = `<strong>🔴 Kết thúc</strong>X: ${Math.round(endCoord.x)}, Y: ${Math.round(endCoord.y)}`;
+            }
+        }
+        
+        async function loadNodesAndEdges() {
+            try {
+                const response = await fetch(`${API_URL}/nodes`);
+                const nodes = await response.json();
+                
+                // Vẽ các node trên bản đồ
+                nodes.forEach(node => {
+                    L.circleMarker([node.y, node.x], {
+                        radius: 5,
+                        fillColor: '#667eea',
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 0.8,
+                        fillOpacity: 0.6
+                    }).bindPopup(`<strong>${node.name}</strong><br/>X: ${Math.round(node.x)}, Y: ${Math.round(node.y)}`).addTo(map);
+                });
+            } catch (error) {
+                console.error('Lỗi khi load nodes:', error);
+            }
+        }
+        
+        async function findPath() {
+            if (!startCoord || !endCoord) return;
+            
+            document.getElementById('findPathBtn').disabled = true;
+            showStatus('Đang tìm đường...', 'info');
+            
+            try {
+                const response = await fetch(`${API_URL}/find-path`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        start_x: startCoord.x,
+                        start_y: startCoord.y,
+                        end_x: endCoord.x,
+                        end_y: endCoord.y
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Lỗi khi tìm đường');
+                }
+                
+                displayPath(data);
+                showStatus('Tìm thấy đường đi!', 'success');
+            } catch (error) {
+                showStatus(`Lỗi: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('findPathBtn').disabled = false;
+            }
+        }
+        
+        function displayPath(data) {
+            // Xóa đường cũ
+            if (selectedPath) {
+                map.removeLayer(selectedPath);
+            }
+            
+            // Vẽ đường mới
+            const latlngs = data.coordinates.map(c => [c.y, c.x]);
+            selectedPath = L.polyline(latlngs, {
+                color: '#ff7300',
+                weight: 3,
+                opacity: 0.7,
+                dashArray: '5, 5'
+            }).addTo(map);
+            
+            // Hiển thị kết quả
+            const pathList = document.getElementById('pathList');
+            pathList.innerHTML = data.path.map((node, idx) => 
+                `<div class="path-item">${idx + 1}. ${node}</div>`
+            ).join('');
+            
+            const distanceText = document.getElementById('distanceText');
+            distanceText.innerHTML = `<strong>Tổng khoảng cách:</strong> ${data.total_distance.toFixed(2)} pixels`;
+            
+            document.getElementById('resultBox').classList.add('show');
+        }
+        
+        function showStatus(msg, type) {
+            const el = document.getElementById('statusMsg');
+            el.textContent = msg;
+            el.className = `status-message show ${type}`;
+        }
+        
+        function resetMap() {
+            startCoord = null;
+            endCoord = null;
+            if (markers.start) map.removeLayer(markers.start);
+            if (markers.end) map.removeLayer(markers.end);
+            if (selectedPath) map.removeLayer(selectedPath);
+            markers = { start: null, end: null };
+            
+            document.getElementById('startPoint').innerHTML = 'Chưa chọn';
+            document.getElementById('endPoint').innerHTML = 'Chưa chọn';
+            document.getElementById('resultBox').classList.remove('show');
+            document.getElementById('statusMsg').classList.remove('show');
+            document.getElementById('findPathBtn').disabled = true;
+        }
+        
+        document.getElementById('findPathBtn').addEventListener('click', findPath);
+        document.getElementById('resetBtn').addEventListener('click', resetMap);
+        
+        // Khởi tạo bản đồ khi tải trang
+        window.addEventListener('load', initMap);
+    </script>
+</body>
+</html>
