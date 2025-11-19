@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.routers import pathfinding
 from app.core.config import settings
-from app.db.database import engine
+from app.db.database import engine, SessionLocal
+from app.services.pathfinding import PathfindingService
 from app.db.models import Base
 
 # Tạo database tables
@@ -23,6 +24,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Tạo 1 instance PathfindingService dùng chung (load nodes/edges 1 lần)
+# sử dụng SessionLocal để khởi tạo session riêng cho service này
+try:
+    _pf_db = SessionLocal()
+    app.state.pathfinder = PathfindingService(_pf_db)
+except Exception:
+    app.state.pathfinder = None
 
 # Mount routers
 app.include_router(pathfinding.router)

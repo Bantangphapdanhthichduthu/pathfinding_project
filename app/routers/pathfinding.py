@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from app.services.pathfinding import PathfindingService
@@ -44,26 +44,21 @@ class NodesResponse(BaseModel):
 
 
 @router.get("/nodes", response_model=List[NodesResponse])
-async def get_all_nodes(db: Session = Depends(get_db)):
+async def get_all_nodes(request: Request):
     """
-    Lấy danh sách tất cả nodes để hiển thị trên bản đồ
+    Lấy danh sách tất cả nodes (từ cache của PathfindingService để tránh query DB mỗi lần)
     """
     try:
-        from app.db.models import NodeModel
-        nodes = db.query(NodeModel).all()
-
-        # Chuyển tọa độ y nếu DB dùng origin bottom-left -> đưa về top-left (để thống nhất với map)
-        map_h = getattr(settings, "MAP_HEIGHT", None)
-        origin = getattr(settings, "MAP_ORIGIN", "top-left")
+        pathfinding: PathfindingService = request.app.state.pathfinder
+        if pathfinding is None:
+            raise HTTPException(status_code=500, detail="Pathfinder service not initialized")
 
         result = []
-        for node in nodes:
-            y = node.y
-            if map_h and origin == "bottom-left":
-                y = map_h - node.y
-            result.append({"name": node.name, "x": node.x, "y": y})
-
+        for name, node in pathfinding.nodes.items():
+            result.append({"name": name, "x": node.x, "y": node.y})
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -71,19 +66,16 @@ async def get_all_nodes(db: Session = Depends(get_db)):
 @router.post("/find-nearest-node", response_model=Optional[str])
 async def find_nearest_node(
     coord: PixelCoordinate,
-    db: Session = Depends(get_db)
+    request: Request
 ):
     """
-    Tìm node gần nhất với tọa độ pixel được click
-    
-    Args:
-        coord: tọa độ pixel {x, y}
-    
-    Returns:
-        Tên node gần nhất hoặc None nếu không tìm thấy
+    Tìm node gần nhất với tọa độ pixel được click (dùng cached nodes)
     """
     try:
-        pathfinding = PathfindingService(db)
+        pathfinding: PathfindingService = request.app.state.pathfinder
+        if pathfinding is None:
+            raise HTTPException(status_code=500, detail="Pathfinder service not initialized")
+
         nearest = pathfinding.find_nearest_node(coord.x, coord.y, max_distance=150)
         return nearest
     except Exception as e:
@@ -92,50 +84,34 @@ async def find_nearest_node(
 
 @router.post("/find-path", response_model=Optional[PathResponse])
 async def find_path(
-    request: PathRequest,
-    db: Session = Depends(get_db)
+    request_body: PathRequest,
+    request: Request
 ):
     """
-    Tìm đường đi từ 2 điểm được click trên bản đồ
-    
-    Args:
-        request: {start_x, start_y, end_x, end_y} (tọa độ pixel)
-    
-    Returns:
-        {
-            'path': ['node1', 'node2', ...],
-            'coordinates': [[x1, y1], [x2, y2], ...],
-            'total_distance': float
-        }
+    Tìm đường đi (sử dụng instance PathfindingService đã được khởi tạo một lần)
     """
     try:
-        pathfinding = PathfindingService(db)
-        
-        # Tìm 2 node gần nhất
-        start_node = pathfinding.find_nearest_node(request.start_x, request.start_y)
-        end_node = pathfinding.find_nearest_node(request.end_x, request.end_y)
-        
+        pathfinding: PathfindingService = request.app.state.pathfinder
+        if pathfinding is None:
+            raise HTTPException(status_code=500, detail="Pathfinder service not initialized")
+
+        # Tìm 2 node gần nhất từ cache
+        start_node = pathfinding.find_nearest_node(request_body.start_x, request_body.start_y)
+        end_node = pathfinding.find_nearest_node(request_body.end_x, request_body.end_y)
+
         if not start_node or not end_node:
-            raise HTTPException(
-                status_code=404,
-                detail="Không tìm thấy node gần vị trí được click"
-            )
-        
-        # Tìm đường đi
+            raise HTTPException(status_code=404, detail="Không tìm thấy node gần vị trí được click")
+
         result = pathfinding.get_path_with_coordinates(start_node, end_node)
-        
+
         if result is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Không tìm thấy đường đi từ {start_node} đến {end_node}"
-            )
-        
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy đường đi từ {start_node} đến {end_node}")
+
         return PathResponse(
             path=result['path'],
             coordinates=[CoordinatePoint(x=coord[0], y=coord[1]) for coord in result['coordinates']],
             total_distance=result['total_distance']
         )
-    
     except HTTPException:
         raise
     except Exception as e:
